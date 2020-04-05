@@ -72,120 +72,6 @@ const useStyles = makeStyles({
   },
 });
 
-const Lamp = ({
-  backgroundImage,
-  data,
-  shapeProps,
-  isSelected,
-  onSelect,
-  onChange,
-}) => {
-  const [lampUrl, setLampUrl] = React.useState(null);
-  let lampHeight;
-  let lampWidth;
-  if (
-    data &&
-    data.node &&
-    data.node.images &&
-    data.node.images.edges.length !== 0 &&
-    lampUrl === null
-  ) {
-    data.node.images.edges.forEach(product => {
-      if (product.node.altText === 'collage') {
-        setLampUrl(product.node.originalSrc);
-      }
-    });
-  }
-  const [image] = useImage(lampUrl, 'Anonymous');
-  if (
-    image &&
-    shapeProps &&
-    shapeProps.height === null &&
-    shapeProps.width === null
-  ) {
-    const aspectRatio = image.width / image.height;
-    if (backgroundImage) {
-      if (
-        backgroundImage.height > backgroundImage.width &&
-        window.innerHeight > window.innerWidth
-      ) {
-        lampHeight = window.innerHeight / 4;
-      } else if (
-        backgroundImage.height > backgroundImage.width &&
-        window.innerHeight < window.innerWidth
-      ) {
-        lampHeight = window.innerHeight / 3;
-      } else if (
-        backgroundImage.height < backgroundImage.width &&
-        window.innerHeight > window.innerWidth
-      ) {
-        lampHeight = window.innerHeight / 6;
-      } else {
-        lampHeight = window.innerHeight / 3;
-      }
-      lampWidth = lampHeight * aspectRatio;
-      shapeProps.width = lampWidth;
-      shapeProps.height = lampHeight;
-    }
-  }
-  const shapeRef = React.useRef();
-  const trRef = React.useRef();
-  React.useEffect(() => {
-    if (isSelected) {
-      trRef.current.setNode(shapeRef.current);
-      trRef.current.getLayer().batchDraw();
-    }
-  }, [isSelected]);
-
-  return (
-    <React.Fragment>
-      <KonvaImage
-        crossOrigin="anonymous"
-        fill=""
-        image={image}
-        onTap={onSelect}
-        onClick={onSelect}
-        ref={shapeRef}
-        {...shapeProps}
-        draggable
-        onDragEnd={e => {
-          onChange({
-            ...shapeProps,
-            x: e.target.x(),
-            y: e.target.y(),
-          });
-        }}
-        onTransformEnd={e => {
-          const node = shapeRef.current;
-          const scaleX = node.scaleX();
-          const scaleY = node.scaleY();
-
-          node.scaleX(1);
-          node.scaleY(1);
-          onChange({
-            ...shapeProps,
-            x: node.x(),
-            y: node.y(),
-            width: Math.max(5, node.width() * scaleX),
-            height: Math.max(node.height() * scaleY),
-          });
-        }}
-      />
-      {isSelected && (
-        <Transformer
-          ref={trRef}
-          boundBoxFunc={(oldBox, newBox) => {
-            if (newBox.width < 5 || newBox.height < 5) {
-              return oldBox;
-            }
-            return newBox;
-          }}
-        />
-      )}
-    </React.Fragment>
-  );
-};
-
 const PictureCollage = () => {
   const queryString = window.location.search;
   const urlParams = new URLSearchParams(queryString);
@@ -228,11 +114,17 @@ const PictureCollage = () => {
   const [backgroundImage, setBackgroundImage] = React.useState(null);
   const [image, setImage] = React.useState(null);
   const [selected, setSelected] = React.useState(false);
-  const [innerHeight, setInnerHeight] = React.useState(window.innerHeight);
   const [innerWidth, setInnerWidth] = React.useState(window.innerWidth);
+  const [innerHeight, setInnerHeight] = React.useState(window.innerHeight);
   const [shape, setShape] = React.useState(null);
   const [currentOrientation, setCurrentOrientation] = React.useState(null);
   const [offset, setOffset] = React.useState(null);
+  const [backgroundCanvasWidth, setBackgroundCanvasWidth] = React.useState(
+    null
+  );
+  const [backgroundCanvasHeight, setBackgroundCanvasHeight] = React.useState(
+    null
+  );
 
   function changeOffset(scaledImage) {
     //The picture gets put in the center of the screen with offset
@@ -307,6 +199,8 @@ const PictureCollage = () => {
     };
   }, [backgroundImage, newImage]);
 
+  const [bodyElement, setBodyElement] = React.useState(null);
+
   let backgroundImageUpload = false;
   if (backgroundImage !== null) {
     backgroundImageUpload = true;
@@ -318,26 +212,27 @@ const PictureCollage = () => {
       loadImage(
         file,
         img => {
-          const scaledImage = loadImage.scale(img, {
-            maxWidth: innerWidth,
-            maxHeight: innerHeight,
-          });
-          setImage(scaledImage);
+          console.log(img);
+          console.log(innerWidth, innerHeight);
+          setImage(img);
           setBackgroundImage(img);
-          changeOffset(scaledImage);
+          changeOffset(img);
+          setBackgroundCanvasWidth(parseInt(img.style.width, 10));
+          setBackgroundCanvasHeight(parseInt(img.style.height, 10));
+          document.querySelector('#root').appendChild(img);
         },
-        { orientation: true }
+        {
+          orientation: true,
+          maxWidth: innerWidth,
+          maxHeight: innerHeight,
+          downsamplingRatio: 0.2,
+          pixelRatio: window.devicePixelRatio,
+          imageSmoothingEnabled: true,
+          imageSmoothingQuality: 'high',
+          canvas: true,
+        }
       );
     }
-  };
-
-  const saveImage = () => {
-    setSelected(false);
-    let canvasStageSave = canvasStage.current;
-    const canvasStageData = canvasStageSave.toDataURL({
-      mimeType: 'image/png',
-    });
-    saveAs(canvasStageData, 'collage.png');
   };
 
   if (window.matchMedia(`(orientation: ${currentOrientation} )`) === false) {
@@ -368,21 +263,9 @@ const PictureCollage = () => {
             }}
           >
             <KonvaImage
-              x={shape ? offset.x : 0}
-              y={shape ? offset.y : 0}
+              width={backgroundCanvasWidth}
+              height={backgroundCanvasHeight}
               image={image}
-            />
-          </Layer>
-          <Layer visible={backgroundImageUpload}>
-            <Lamp
-              backgroundImage={image}
-              data={data}
-              shapeProps={shape}
-              isSelected={selected}
-              onSelect={() => {
-                setSelected(true);
-              }}
-              onChange={setShape}
             />
           </Layer>
         </Stage>
@@ -418,18 +301,6 @@ const PictureCollage = () => {
               style={{ display: 'none' }}
               onChange={handleImageUpload}
             />
-          </label>
-        </div>
-        <div
-          style={
-            backgroundImageUpload
-              ? { visibility: 'visible' }
-              : { visibility: 'hidden' }
-          }
-          className={classes.singleButtonContainerAfterUpload}
-        >
-          <label className={classes.button} onClick={saveImage}>
-            Bild Speichern
           </label>
         </div>
       </div>
